@@ -3311,8 +3311,17 @@ fn yank(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
     let text = doc.text().slice(..);
 
-    let values: Vec<String> = doc
-        .selection(view.id)
+    let selected = doc.selection(view.id);
+    let ranges = selected.ranges();
+    let out_of_bounds = ranges.iter().any(|&r| r.to() > text.len_bytes());
+    
+    if out_of_bounds {
+        let msg = format!("a selection was out of bounds");
+        cx.editor.set_status(msg);
+        return;
+    }
+    
+    let values: Vec<String> = selected
         .fragments(text)
         .map(Cow::into_owned)
         .collect();
@@ -3339,8 +3348,18 @@ fn yank_joined_to_clipboard_impl(
     let (view, doc) = current!(editor);
     let text = doc.text().slice(..);
 
-    let values: Vec<String> = doc
-        .selection(view.id)
+//    let (text, selected, ranges, out_of_bounds) = gaurd_current!(view, doc);
+    let selected = doc.selection(view.id);
+    let ranges = selected.ranges();
+    let out_of_bounds = ranges.iter().any(|&r| r.to() > text.len_bytes());
+    
+    if out_of_bounds {
+        //bail!("A selection was out of bounds");
+        editor.set_status("selection was out of bounds");
+        return Ok(());
+    }
+    
+    let values: Vec<String> = selected
         .fragments(text)
         .map(Cow::into_owned)
         .collect();
@@ -3375,17 +3394,23 @@ fn yank_main_selection_to_clipboard_impl(
 ) -> anyhow::Result<()> {
     let (view, doc) = current!(editor);
     let text = doc.text().slice(..);
-
-    let value = doc.selection(view.id).primary().fragment(text);
-
-    if let Err(e) = editor
-        .clipboard_provider
-        .set_contents(value.into_owned(), clipboard_type)
-    {
-        bail!("Couldn't set system clipboard content: {}", e);
+    
+    let primary_view = doc.selection(view.id).primary();
+    if primary_view.to() <= text.len_bytes() {       
+        let value = doc.selection(view.id).primary().fragment(text);
+         
+        if let Err(e) = editor
+            .clipboard_provider
+            .set_contents(value.into_owned(), clipboard_type)
+        {
+            bail!("Couldn't set system clipboard content: {}", e);
+        }
+    
+        editor.set_status("yanked main selection to system clipboard");
+    } else {
+        editor.set_status("selection was out of bounds");
+        //bail!("Selection was out of bounds");
     }
-
-    editor.set_status("yanked main selection to system clipboard");
     Ok(())
 }
 
